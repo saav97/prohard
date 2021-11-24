@@ -15,7 +15,7 @@ const getTickets = async (req, res) => {
                 .limit(10)
                 .populate('usuario', 'nombre')
                 .populate('cliente', 'nombre apellido')
-                .populate({path : 'tareas', model:'Tarea'})
+                .populate({ path: 'tareas', model: 'Tarea' })
                 .populate('estados.usuario', 'nombre apellido'),
             Ticket.count()
         ])
@@ -28,7 +28,7 @@ const getTickets = async (req, res) => {
         })
     } catch (error) {
         res.json({
-            ok:false,
+            ok: false,
             err: error
         })
     }
@@ -42,11 +42,11 @@ const getTicketById = async (req, res) => {
     try {
 
         const ticket = await Ticket.findById(id)
-                                .populate('cliente', 'nombre apellido email direccion telefono calle ciudad numero departamento piso')
-                                .populate('usuario', 'nombre')
-                                .populate({path : 'tareas', model:'Tarea'})
-                                .populate('estados.usuario', 'nombre apellido')
-                                
+            .populate('cliente', 'nombre apellido email direccion telefono calle ciudad numero departamento piso')
+            .populate('usuario', 'nombre')
+            .populate({ path: 'tareas', model: 'Tarea' })
+            .populate('estados.usuario', 'nombre apellido')
+
 
         res.json({
             ok: true,
@@ -56,7 +56,7 @@ const getTicketById = async (req, res) => {
         res.json({
             ok: false,
             id,
-            msg:'Ticket no encontrado'
+            msg: 'Ticket no encontrado'
         })
     }
 
@@ -69,18 +69,18 @@ const crearTicket = async (req, res = response) => {
     const uid = req.uid;
 
     try {
-       /* existeNroServicio = await Ticket.findOne({ nroServicio });
-
-        if (existeNroServicio) {
-            return res.status(400).json({
-                ok: false,
-                msg: 'El numero de servicio ya fue generado'
-            })
-        }*/
+        /* existeNroServicio = await Ticket.findOne({ nroServicio });
+ 
+         if (existeNroServicio) {
+             return res.status(400).json({
+                 ok: false,
+                 msg: 'El numero de servicio ya fue generado'
+             })
+         }*/
         console.log(req.body)
         const ticket = new Ticket({
             usuario: uid,
-            estados:[{
+            estados: [{
                 fechaEstadoIso: new Date(),
                 usuario: uid
             }],
@@ -140,10 +140,10 @@ const actualizarTicket = async (req = request, res = response) => {
     }
 }
 
-const agregarEstado = async (req = request, res = response)=>{
+const agregarEstado = async (req = request, res = response) => {
     const cid = req.params.id;
-    const {estadoTicket, fechaEstadoIso, detalle} = req.body
-    const nuevoEstado={
+    const { estadoTicket, fechaEstadoIso, detalle } = req.body
+    const nuevoEstado = {
         estadoTicket,
         fechaEstadoIso,
         detalle,
@@ -151,15 +151,15 @@ const agregarEstado = async (req = request, res = response)=>{
     }
 
     try {
-        await Ticket.updateOne({_id:cid}, {$push:{"estados": nuevoEstado}}, {strict: false});
+        await Ticket.updateOne({ _id: cid }, { $push: { "estados": nuevoEstado } }, { strict: false });
         res.json({
-            ok:true,
+            ok: true,
             msg: "Estado actualizado"
         })
-        const cambiosTicket={
+        const cambiosTicket = {
             estadoTicket: estadoTicket
         }
-        
+
         await Ticket.findByIdAndUpdate(cid, cambiosTicket, { new: true });
 
     } catch (error) {
@@ -171,37 +171,114 @@ const agregarEstado = async (req = request, res = response)=>{
     }
 }
 
-const agregarTareas = async (req = request, res = response)=>{
+const eliminarEstado = async (req = request, res = response) => {
+    const tid = req.params.id;
+    const { fechaEstadoIso } = req.body
+
+    try {
+        ticket = await Ticket.findById(tid);
+
+        ticket.estados = ticket.estados.filter((item) => {
+            return item.fechaEstadoIso.getTime() !=  new Date(fechaEstadoIso).getTime();
+        })
+
+        const ticketActualizado = await Ticket.findByIdAndUpdate(tid, ticket, { new: true });
+
+        res.json({
+            ok: true,
+            msg: 'Ticket Actualizado',
+            ticket: ticketActualizado
+        })
+
+    } catch (error) {
+        console.log(error)
+        res.status(500).json({
+            ok: false,
+            msg: 'Hable con el administrador'
+        })
+    }
+
+}
+
+const agregarTareas = async (req = request, res = response) => {
     const cid = req.params.id;
-    const {tareas, estadoTicket, fechaEstadoIso} = req.body
+    let { tareas } = req.body
     const uid = req.uid
-    
-    const nuevoEstado={
-        estadoTicket,
-        fechaEstadoIso,
-        usuario: req.uid
-    }
-    const cambioEstado={
-        estadoTicket: estadoTicket
-    }
 
     try {
         // Actualizamos las tareas
-        await Ticket.updateOne({_id:cid}, {$set:{"tareas":tareas}});
+        // obtengo el ticket
+        ticket = await Ticket.findById(cid);
 
-        // Actualizamos los estados
-        await Ticket.updateOne({_id:cid}, {$push:{"estados": nuevoEstado}}, {strict: false});
+        //Verifico si tenemos elementos repetidos
 
-        
-        
-        //Actualizo el estado
-        await Ticket.findByIdAndUpdate(cid, cambioEstado, { new: true });
+        if (ticket.tareas.lenght != 0) {
+            tareas = buscaRepetidos(tareas, ticket.tareas);
+        }
+
+        if(tareas.lenght!=0){
+            await Ticket.updateOne({ _id: cid }, { $push: { "tareas": tareas } }, { strict: false });
+        }
 
         res.json({
             ok: true,
             msg: 'Ticket Actualizado',
         })
 
+    } catch (error) {
+        console.log(error)
+        res.status(500).json({
+            ok: false,
+            msg: 'Hable con el administrador'
+        })
+    }
+
+}
+
+const buscaRepetidos = (tareasIngresadas, tareas) => {
+
+    //obtengo duplicados
+    let duplicados = tareas.filter(v => tareasIngresadas.includes(v.toString())
+    );
+
+
+    //elimino duplicados
+    if (duplicados.lenght != 0) {
+        for(let e of duplicados){
+            tareasIngresadas = tareasIngresadas.filter((item) => item!= e)
+        } 
+    }
+    return tareasIngresadas;
+
+}
+
+const eliminarTarea = async (req = request, res = response) => {
+    const tid = req.params.id;
+
+    const { taid } = req.body;
+
+    console.log(tid, taid);
+
+    try {
+        const ticket = await Ticket.findById(tid);
+        if (!ticket) {
+            return res.status(404).json({
+                ok: true,
+                msg: 'Ticket no encontrado'
+            });
+        }
+
+        ticket.tareas = ticket.tareas.filter((item) => {
+            return item != taid
+        })
+
+        const ticketActualizado = await Ticket.findByIdAndUpdate(tid, ticket, { new: true });
+
+        res.json({
+            ok: true,
+            msg: 'Ticket Actualizado',
+            ticket: ticketActualizado
+        })
     } catch (error) {
         console.log(error)
         res.status(500).json({
@@ -248,5 +325,7 @@ module.exports = {
     eliminarTicket,
     getTicketById,
     agregarTareas,
-    agregarEstado
+    agregarEstado,
+    eliminarTarea,
+    eliminarEstado
 }
